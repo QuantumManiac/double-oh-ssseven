@@ -2,15 +2,20 @@ import logging
 import os
 
 from flask import Flask
+from flask_cors import CORS, cross_origin
 from flask import request
 
 import server_logic
 
 
 app = Flask(__name__)
+CORS(app)
+
+app.config['CORS_HEADERS'] = 'Content-Type'
 
 
 @app.get("/")
+@cross_origin()
 def handle_info():
     """
     This function is called when you register your Battlesnake on play.battlesnake.com
@@ -32,6 +37,7 @@ def handle_info():
 
 
 @app.post("/start")
+@cross_origin()
 def handle_start():
     """
     This function is called everytime your snake is entered into a game.
@@ -44,6 +50,7 @@ def handle_start():
 
 
 @app.post("/move")
+@cross_origin()
 def handle_move():
     """
     This function is called on every turn of a game. It's how your snake decides where to move.
@@ -57,6 +64,7 @@ def handle_move():
 
 
 @app.post("/end")
+@cross_origin()
 def end():
     """
     This function is called when a game your snake was in ends.
