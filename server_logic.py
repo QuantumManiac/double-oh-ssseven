@@ -6,9 +6,44 @@ import random
 Helper Functions
 """
 
-global BOARD_HEIGHT
-global BOARD_WIDTH
-global DATA
+BOARD_HEIGHT = None
+BOARD_WIDTH = None
+DATA = None
+
+WEIGHT_BESIDE_BODY = None
+WEIGHT_BESIDE_FOOD = None
+WEIGHT_BESIDE_EDGE = None
+WEIGHT_AVOID_EATEN_TILE = None
+SMALLER_HEAD_EXPONENT = None
+FOOD_WEIGHT_FACTOR = None
+LOW_HEALTH_THRESH = None
+
+def setup(data: dict):
+    global BOARD_HEIGHT
+    global BOARD_WIDTH
+    global DATA
+
+    global WEIGHT_BESIDE_FOOD
+    global WEIGHT_BESIDE_BODY
+    global WEIGHT_BESIDE_EDGE
+    global SMALLER_HEAD_EXPONENT
+    global WEIGHT_AVOID_EATEN_TILE
+    global FOOD_WEIGHT_FACTOR
+    global LOW_HEALTH_THRESH
+    
+    WEIGHT_BESIDE_BODY = -10000
+    WEIGHT_BESIDE_FOOD = 50
+    WEIGHT_BESIDE_EDGE = -10000
+    FOOD_WEIGHT_FACTOR = 0.5
+    LOW_HEALTH_THRESH = 30
+
+
+    WEIGHT_AVOID_EATEN_TILE = -1000
+
+    SMALLER_HEAD_EXPONENT = 2
+
+    DATA = data
+    BOARD_HEIGHT, BOARD_WIDTH = DATA["board"]["height"], DATA["board"]["width"]
 
 # Helper function to get a dict of moves surrounding a tile
 def get_surround_moves(head_pos: dict):
@@ -31,15 +66,42 @@ def get_surround_moves(head_pos: dict):
         }
     }
 
+
+def is_snake_largest_by_two() -> bool:
+    global DATA
+    snake_lengths = [x['length'] for x in DATA['board']['snakes']]
+    snake_lengths.sort(reverse=True)
+    
+    you_length = DATA['you']['length']
+
+    if len(snake_lengths) == 1:
+        return True
+
+    return snake_lengths[0] == you_length and snake_lengths[0] >= snake_lengths[1] + 2
+
+def is_possible_move(pos: dict):
+    # Check if space occupied by snake tile
+    return not is_occupied(pos) and not tile_out_of_bounds(pos)
+
+def is_occupied(pos: dict):
+    global DATA
+    
+    # Check if tile is any of the occupied tiles
+    for snake in DATA['board']['snakes']:
+        if pos in snake["body"]:
+            return True
+    return False
+
 def dist(x1, y1, x2, y2):
     return abs(x1 - x2) + abs(y1 - y2) 
 
 def abs_dist(p1: dict, p2: dict):
     return (abs(p1['x'] - p2['x']) ** 2 + abs(p1['y'] - p2['y']) ** 2) ** 0.5
 
-def tile_out_of_bounds(tile:dict):
+def tile_out_of_bounds(tile: dict):
     global BOARD_HEIGHT
     global BOARD_WIDTH
+    
     return tile['x'] < 0 or tile['x'] == BOARD_WIDTH or tile['y'] < 0 or tile['y'] == BOARD_HEIGHT
 
 def flood_fill(tile: dict,  not_possible_moves: list, visited: list):
@@ -63,11 +125,15 @@ def flood_fill(tile: dict,  not_possible_moves: list, visited: list):
     return possible_moves
     
  
-    # Check if tile is out of bou
+    # Check if tile is out of bounds
     
 
 def dont_get_enclosed(weights: dict, possible_moves: dict):
     global DATA
+    global BOARD_HEIGHT
+    global BOARD_WIDTH
+
+    
     # Get a list of all the snake body tiles on the table (ignoring tails because they clear tile next turn)
     snake_tiles = []
     for snake in DATA["board"]["snakes"]:
@@ -87,6 +153,7 @@ def dont_get_enclosed(weights: dict, possible_moves: dict):
 
 
 
+
 """
 Weight Calculation Functions
 """
@@ -96,24 +163,25 @@ Weight Calculation Functions
 def avoid_edge(weights: dict, possible_moves: dict):
     global BOARD_HEIGHT
     global BOARD_WIDTH
+    global WEIGHT_BESIDE_EDGE
 
     # Iterate through all possible moves and reduce weights on them if they're out of bounds
     for dir_key, dir_value in possible_moves.items():
         if dir_value["x"] < 0 or dir_value["x"] >= BOARD_WIDTH or dir_value[
                 "y"] < 0 or dir_value["y"] >= BOARD_HEIGHT:
-            weights[dir_key] += -100
-
+            weights[dir_key] += WEIGHT_BESIDE_EDGE
 
 # Avoid hitting self
 def avoid_self(weights: dict, possible_moves: dict):
     global DATA
+    global WEIGHT_BESIDE_BODY
     
     body_pos = DATA["you"]["body"]
 
     # Iterate through each of the directions and see if the body is in any of those coordinates. If they are, reduce its weight
     for dir_key, dir_value in possible_moves.items():
         if dir_value in body_pos:
-            weights[dir_key] += -100
+            weights[dir_key] += WEIGHT_BESIDE_BODY
 
     # Iterate through every body tile and set a weight for each direction based on distance
     # i = 0
@@ -131,9 +199,10 @@ def avoid_self(weights: dict, possible_moves: dict):
     #     i += 1
         
 
-# TODO Food finding (maybe improve?) 
 # TODO Ignore food if biggest snake
-# TODO Account for body moving in flood fill algo
+
+
+
 # TODO Tweak weights
 
 
@@ -141,6 +210,7 @@ def avoid_self(weights: dict, possible_moves: dict):
 # Avoid hitting other snakes
 def avoid_others(weights: dict, possible_moves: dict):
     global DATA
+    global WEIGHT_BESIDE_BODY
     
     you_id, snakes = DATA["you"]["id"], DATA["board"]["snakes"]
 
@@ -157,13 +227,14 @@ def avoid_others(weights: dict, possible_moves: dict):
     # Iterate through each of the directions and see if the body is in any of those coordinates. If they are, reduce its weight
     for dir_key, dir_value in possible_moves.items():
         if dir_value in snake_tiles:
-            weights[dir_key] += -100
+            weights[dir_key] += WEIGHT_BESIDE_BODY
 
 
 # TODO: avoid going somewhere that could lead to being eaten
 # Fine if snake is smaller
 def avoid_eaten(weights: dict, possible_moves: dict):
     global DATA
+    global WEIGHT_AVOID_EATEN_TILE
 
     you, snakes = DATA["you"], DATA["board"]["snakes"]
 
@@ -192,44 +263,111 @@ def avoid_eaten(weights: dict, possible_moves: dict):
         for pos in dir_value:
             # If snake in one of these tiles, reduce weight
             if pos in larger_snake_heads:
-                weights[dir_key] += -50
+                weights[dir_key] += WEIGHT_AVOID_EATEN_TILE
                 break
+
+
+
+
+def get_smaller_heads() -> list:
+    global DATA 
+    heads = []
+    my_size = DATA['you']['length']
+
+    for snake in DATA['board']['snakes']:
+        if snake['length'] < my_size:
+            heads.append(snake['head'])
+
+    return heads
+
+
+def generate_head_markers(heads:list) -> list:
+    head_markers = []
+    for head in heads:
+        possible_moves = get_surround_moves(head)
+        for move in possible_moves.values():
+            if is_possible_move(move):
+                head_markers.append(move)
+    return head_markers
+
+
+
+
+def find_smaller_heads(weights: dict):
+    global DATA
+    global BOARD_HEIGHT
+    global BOARD_WIDTH
+    global SMALLER_HEAD_EXPONENT
+
+    heads = get_smaller_heads()
+    head_markers = generate_head_markers(heads)
+    your_head = DATA["you"]["head"]
+    max_move = BOARD_HEIGHT + BOARD_WIDTH
+
+    for marker in head_markers:
+        # If marker to right
+        if marker["x"] > your_head["x"]:
+            weights["right"] += (max_move - (marker["x"] - your_head["x"])) * len(heads) ** SMALLER_HEAD_EXPONENT
+        # If marker to left
+        elif marker["x"] < your_head["x"]:
+            weights["left"] += (max_move - (your_head["x"] - marker["x"])) * len(heads) ** SMALLER_HEAD_EXPONENT
+        # If marker to right
+        if marker["y"] > your_head["y"]:
+            weights["up"] += (max_move - (marker["y"] - your_head["y"])) * len(heads) ** SMALLER_HEAD_EXPONENT
+        # If marker to left
+        elif marker["y"] < your_head["y"]:
+            weights["down"] += (max_move - (your_head["y"] - marker["y"])) * len(heads) ** SMALLER_HEAD_EXPONENT
+
+    
+def get_all_heads():
+    global DATA
+    heads = []
+    for snake in DATA["board"]["snakes"]:
+        if not snake == DATA["you"]:
+            heads.append(snake['head'])
+    return heads
+        
 
 def find_food(weights: dict, possible_moves: dict):
     global DATA 
-    
-    head = DATA["you"]["head"]
-    height, width = DATA["board"]["height"], DATA["board"]["width"]
-    max_move = width + height
-    
-    food_tiles = DATA["board"]["food"]
-    
-    # Check if there is a food adjacent
-    for dir_key, dir_value in possible_moves.items():
-        if dir_value in food_tiles:
-            weights[dir_key] += 50
-            return
-    # Add weights based on distance to all food tiles
-    for food in food_tiles:
-        # If food to right
-        if food["x"] > head["x"]:
-            weights["right"] += max_move - (food["x"] - head["x"])
-        # If food to left
-        elif food["x"] < head["x"]:
-            weights["left"] += max_move - (head["x"] - food["x"])
-        # If food to right
-        if food["y"] > head["y"]:
-            weights["up"] += max_move - (food["y"] - head["y"])
-        # If food to left
-        elif food["y"] < head["y"]:
-            weights["down"] += max_move - (head["y"] - food["y"])
-
-def setup(data: dict):
     global BOARD_HEIGHT
     global BOARD_WIDTH
-    global DATA
-    DATA = data
-    BOARD_HEIGHT, BOARD_WIDTH = DATA["board"]["height"], DATA["board"]["width"]
+    global WEIGHT_BESIDE_FOOD
+    global FOOD_WEIGHT_FACTOR
+    
+    
+    head = DATA["you"]["head"]
+    max_move = BOARD_HEIGHT + BOARD_WIDTH
+    
+    health = DATA['you']['health']
+
+    food_tiles = DATA["board"]["food"]
+
+    biggest_snake_by_two = is_snake_largest_by_two()
+
+    for dir_key, dir_value in possible_moves.items():
+        if dir_value in food_tiles:
+            weights[dir_key] += (-WEIGHT_BESIDE_FOOD * 3) if  biggest_snake_by_two and health > LOW_HEALTH_THRESH else WEIGHT_BESIDE_FOOD
+
+    # Add weights based on distance to all food tiles
+    if (not biggest_snake_by_two or health < LOW_HEALTH_THRESH):
+            # Check if there is a food adjacent
+        
+        for food in food_tiles:
+            # If food to right
+            if food["x"] > head["x"]:
+                weights["right"] += (max_move - (food["x"] - head["x"])) * FOOD_WEIGHT_FACTOR
+            # If food to left
+            elif food["x"] < head["x"]:
+                weights["left"] += (max_move - (head["x"] - food["x"])) * FOOD_WEIGHT_FACTOR
+            # If food to right
+            if food["y"] > head["y"]:
+                weights["up"] += (max_move - (food["y"] - head["y"])) * FOOD_WEIGHT_FACTOR
+            # If food to left
+            elif food["y"] < head["y"]:
+                weights["down"] += (max_move - (head["y"] - food["y"])) * FOOD_WEIGHT_FACTOR
+    
+
 
 
     
@@ -267,6 +405,9 @@ def calc_weights():
     avoid_eaten(weights, possible_moves)
     # Find food
     find_food(weights, possible_moves)
+
+    find_smaller_heads(weights)
+
     # Don't get enclosed
     dont_get_enclosed(weights, possible_moves)
 
